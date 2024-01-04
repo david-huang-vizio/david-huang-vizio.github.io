@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link href="https://vjs.zencdn.net/7.2.3/video-js.css" rel="stylesheet">
+</head>
+
+<body>
+    <style>
+        table {
+            font-family: arial, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        td,
+        th {
+            border: 0px solid #d8dae1;
+            text-align: left;
+            color: blue;
+            font-
+        }
+
+        h1 {
+            color: blue;
+        }
+
+        .button {
+            background-color: #4caf4c;
+            border: none;
+            color: white;
+            padding: 10px 26px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 10px;
+            margin: 2px 1px;
+            cursor: pointer;
+        }
+
+        div {
+            margin-top: 20px;
+            border: solid 0px black;
+            padding: 5px;
+        }
+    </style>
+    <button type="button" id="0" onclick="toggleVisibility('content')">toggle controls</button>
+    <div id="content" style="display: block;">
+        <h1 id="command_result" style="display: none;">result</h1>
+        <p>
+            <input type=submit class="button" id="1" name="saveChannelList" value="GET CHANNEL LIST" onclick="loadChannels()">
+            <input type=submit class="button" id="1" name="getCurrentChannel" value="CURRENT CHANNEL" onclick="runCommand(this.name)">
+            <input type=submit class="button" id="1" name="stopPlayback" value="STOP CHANNEL" onclick="runCommand(this.name)">
+            <input type=submit class="button" id="1" name="startScan" value="START SCAN" onclick="runCommand(this.name)">
+            <input type=submit class="button" id="1" name="getScanProgress" value="SCAN PROGRESS" onclick="runCommand(this.name)">
+            <input type=submit class="button" id="1" name="stopScan" value="STOP SCAN" onclick="runCommand(this.name)">
+            <input type=submit class="button" id="1" name="playVideo" value="PLAY VIDEO" onclick="playVideo()">
+            <input type=submit class="button" id="1" name="pauseVideo" value="STOP VIDEO" onclick="stopVideo()">
+            <input type=submit class="button" id="1" name="settings" value="SETTINGS" onclick="settings()">
+        <br><br>
+
+        <label for="pin_input">PIN:</label>
+        <input type="text" id="pin_input" name="pin_input">
+        <input type=submit class="button" name="setPin" value="SET" onclick="setPin(document.getElementById('pin_input').value)">
+        <br><br>
+        </p>
+        <p>
+        <div id="app-video">
+            <video id='hls-example' class='video-js vjs-default-skin' width='1' height='1' preload controls style="display: none;"><source type= 'application/x-mpegURL' src = 'https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8'></video>
+        </div>
+        </p>
+        <h1>Channel List</h1>
+
+        <table id="channelList" BORDER="0">
+        </table>
+    </div>
+    <script src="https://vjs.zencdn.net/ie8/ie8-version/videojs-ie8.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-contrib-hls/5.14.1/videojs-contrib-hls.js"></script>
+    <script src="https://vjs.zencdn.net/7.2.3/video.js"></script>
+    <script>
+        var token;
+        var skip_ch_list;
+        var pin_hashval;
+        var current_pin;
+        var ws;
+        var ws_notify;
+        var player = videojs('hls-example');
+
+        function populateChannelList(text) {
+            items = text.channels;
+            let k = 1;
+            const table = document.getElementById("channelList");
+            table.innerHTML = "";
+
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                if (item.broadcastType == "3") {
+                    k = k + 1;
+                    let row = table.insertRow();
+                    let nname = row.insertCell(0);
+                    nname.innerHTML = `<input type=submit class='button' id=${k} name='tune:${item.channelId}' value='${item.majorId}-${item.minorId} ${item.name}' onkeypress='tune(${item.channelId})'>`;
+
+                    let nchannelId = row.insertCell(1);
+                    nchannelId.innerHTML = item.channelId;
+
+                    let skp = row.insertCell(2);
+                    skp.innerHTML = `<input type=submit class='button' value='skip' onkeypress='skipChannel("${item.majorId}-${item.minorId} ${item.name}", true)'>`;
+
+                    let unskp = row.insertCell(3);
+                    unskp.innerHTML = `<input type=submit class='button' value='unskip' onkeypress='skipChannel("${item.majorId}-${item.minorId} ${item.name}", false)'>`;
+
+                    row.id = parseInt(item.channelId);
+                }
+            }
+        }
+
+        function loadJSON(path, success, error) {
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        success(JSON.parse(xhr.responseText));
+                    }
+                    else {
+                        error(xhr);
+                    }
+                }
+            };
+            xhr.open('GET', path, true);
+            xhr.send();
+        }
+
+        function loadChannels() {
+            //ws.send("saveChannelList");
+            ws.send("\{\"id\":1,\"command\":\"getChannelList\"\}");
+            console.log("getting channel list");
+            ws.onmessage = function (event) {
+                console.log("Received channel list");
+                console.log(event.data);
+                loadJSON(event.data,populateChannelList, 'jsonp'); 
+            };
+
+            var timer = setInterval(function () {
+                clearInterval(timer);
+                loadJSON("channel.json", populateChannelList, 'jsonp');
+            }, 2000);
+        }
+
+        window.onload = function () {
+            document.getElementById("1").focus();
+
+            /* open sockets for notifications and commands */
+            ws_notify = new WebSocket("ws://localhost:9091");
+            ws_notify.onmessage = function(event) {
+                console.log(`[notify] tuner signal state changed to: ${event.data}`);
+            };
+
+            ws = new WebSocket("ws://localhost:9090");
+            ws.onmessage = function(event) {
+                console.log(event.data);
+            };
+            ws.onopen = function(e) {
+                loadChannels();
+            };
+
+            /* get auth token */
+            fetch('http://127.0.0.1:7346/app/get_auth_token')
+            .then(data => data.json())
+            .then((json) => {
+                console.log(JSON.stringify(json));
+                token = json.ITEM.VALUE;
+            })
+            .then(() => {
+                /* get channel list */
+                fetch('http://127.0.0.1:7346/menu_native/dynamic/tv_settings/channels/skip_channel',
+                    {
+                        headers: {'SESSION': token },
+                        method: 'GET'
+                    }
+                )
+                .then(data => data.json())
+                .then((json) => {
+                    console.log(json);
+                    skip_ch_list = json;
+                });
+
+                /* get pin */
+                fetch('http://127.0.0.1:7346/menu_native/dynamic/tv_settings/system/system_pin',
+                    {
+                        headers: {'SESSION': token },
+                        method: 'GET'
+                    }
+                )
+                .then(data => data.json())
+                .then((json) => {
+                    console.log(json);
+                    current_pin = json.ITEMS[0].VALUE;
+                    pin_hashval = json.ITEMS[0].HASHVAL;
+                    console.log('current pin: ' + current_pin);
+                    document.getElementById('pin_input').value = current_pin;
+                });
+            })
+
+        }
+
+        document.onkeydown = checkKey;
+        function checkKey(e) {
+            e = e || window.event;
+
+            if (e.keyCode == '37') {
+                e.preventDefault();
+                if (document.activeElement.previousElementSibling != null) {
+                    document.activeElement.previousElementSibling.focus();
+                }
+            }
+            else if (e.keyCode == '38') {
+                e.preventDefault();
+                // up arrow
+                var n = parseInt(document.activeElement.id, 10);
+                if (n > 0) {
+                    var previous = n - 1;
+                    document.getElementById(previous.toString()).focus();
+                }
+            }
+            else if (e.keyCode == '39') {
+                e.preventDefault();
+                if (document.activeElement.nextElementSibling != null) {
+                    document.activeElement.nextElementSibling.focus();
+                }
+            }
+            else if (e.keyCode == '40') {
+                e.preventDefault();
+                // down arrow
+                var n = parseInt(document.activeElement.id, 10);
+                if (n < 300) {
+                    var next = n + 1;
+                    if (document.getElementById(next.toString())) {
+                        document.getElementById(next.toString()).focus();
+                    }
+                    else {
+                        next = 1;
+                        document.getElementById(next.toString()).focus();
+                    }
+                }
+            }
+            else {
+                return;
+            }
+        }
+
+        function toggleVisibility(ele) {
+            var content = document.getElementById(ele);
+            if (content.style.display === "block") {
+                content.style.display = "none";
+            } else {
+                content.style.display = "block";
+            }
+        }
+
+        function tune(id) {
+            var video = document.getElementsByTagName('video');
+            if (video.length != 0) {
+                if (typeof (video[0].src) != 'undefined' && video[0].src != null) {
+                    video[0].src = null;
+                }
+            }
+            player.src({type:'', src:''});
+
+            console.log("tuning to " + id);
+            //navigator.vizioConnection.send("viziosdkd", "setOsdVisibility:0");
+            ws.send("\{\"id\":2,\"command\":\"tune\",\"channelId\":" + id + "\}");
+            /*var timer = setInterval(function () {
+                clearInterval(timer);
+                console.log("restore OSD visibility");
+                navigator.vizioConnection.send("viziosdkd", "setOsdVisibility:1");
+            }, 3500);*/
+        }
+
+        function runCommand(elem) {
+            var video = document.getElementsByTagName('video');
+            if (video.length != 0) {
+                if (typeof (video[0].src) != 'undefined' && video[0].src != null) {
+                    video[0].src = null;
+                }
+            }
+            player.src({type:'', src:''});
+
+            console.log("run command: ", elem);
+            ws.onmessage = function(event) {
+                console.log(event.data);
+                var prog = document.getElementById("command_result");
+                prog.style.display = "block";
+                var result = event.data;
+                result = "Result: " + result.slice(11, result.length - 2);
+                prog.innerHTML = result;
+            };
+            ws.send(elem);
+        }
+
+        function settings() {
+            navigator.vizioConnection.send('loki', JSON.stringify({ "command": "bundle", "url": "bundles/watchfree-plus-loki-bundle" }));
+            navigator.vizioConnection.send('loki', JSON.stringify({ "command": "deepLink", "target": "/watchfree-settings" }));
+        }
+
+        function setPin(value) {
+            fetch('http://127.0.0.1:7346/menu_native/dynamic/tv_settings/system/system_pin',
+                {
+                    headers: { 'SESSION': token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 'REQUEST': 'MODIFY', 'VALUE': value, 'HASHVAL': pin_hashval }),
+                    method: 'PUT'
+                }
+            )
+            .then(data => data.json())
+            .then((json) => {
+                console.log(json);
+            });
+        }
+
+        function skipChannel(name, state) {
+            console.log(`set skip channel for ${name} to ${state}`);
+            it = skip_ch_list.ITEMS.filter(ele => ele.NAME === name);
+            if (it.length) {
+                value = (state == true) ? 'Yes' : 'No';
+                cname = it[0].CNAME;
+                fetch('http://127.0.0.1:7346/menu_native/dynamic/tv_settings/channels/skip_channel/' + cname + '/state',
+                    {
+                        headers: {'SESSION': token },
+                        method: 'GET'
+                    }
+                )
+                .then(data => data.json())
+                .then((json) => {
+                    console.log(json);
+                    fetch('http://127.0.0.1:7346/menu_native/dynamic/tv_settings/channels/skip_channel/' + cname + '/state',
+                        {
+                            headers: { 'SESSION': token, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 'REQUEST': 'MODIFY', 'VALUE': value, 'HASHVAL': json.ITEMS[0].HASHVAL }),
+                            method: 'PUT'
+                        }
+                    )
+                    .then(data => data.json())
+                    .then((json) => {
+                        console.log(json);
+                    });
+                });
+
+            }
+        }
+
+        function playVideo() {
+            ws.send("\{\"id\":3,\"command\":\"stopPlayback\"\}");
+            player.src({type:'application/x-mpegURL', src:'https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8'});
+            player.autoplay(true);
+        }
+
+        function stopVideo() {
+            if (!player.paused) {
+                player.pause();
+                player.src({type:'', src:''});
+            }
+            document.getElementsByTagName('video')[0].src=null;
+        }
+    </script>
+
+
+</body>
+</html>
+

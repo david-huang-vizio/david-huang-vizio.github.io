@@ -1,0 +1,33 @@
+{
+    "channels": [
+        {
+            "name": "channel1",
+            "channelId": "1",
+            "program": "1",
+            "frequency": "4000",
+            "physicalChannel": "1",
+            "broadcastType": "2"
+        },
+        {   "name": "channel2",
+            "channelId": "2",
+            "program": "2",
+            "frequency": "4200",
+            "physicalChannel": "2",
+            "broadcastType": "2"
+        },
+        {   "name": "",
+            "channelId": "2",
+            "program": "2",
+            "frequency": "4200",
+            "physicalChannel": "2",
+            "broadcastType": "2"
+        },
+        {   "name": "channel4",
+            "channelId": "2",
+            "program": "2",
+            "frequency": "4200",
+            "physicalChannel": "2",
+            "broadcastType": "2"
+        }
+    ]
+}
