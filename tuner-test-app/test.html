@@ -48,7 +48,9 @@
     <div id="content" style="display: block;">
         <h1 id="command_result" style="display: none;">result</h1>
         <p>
-            <input type=submit class="button" id="1" name="saveChannelList" value="GET CHANNEL LIST" onclick="loadChannels()">
+	    <input type=submit class="button" id="1" name="isAtmosSupported" value="ATMOS" onclick="isAtmosSupported()">
+	    <input type=submit class="button" id="1" name="wsAtmosStatus" value="ATMOS WS" onclick="wsAtmosStatus()">
+	    <input type=submit class="button" id="1" name="saveChannelList" value="GET CHANNEL LIST" onclick="loadChannels()">
             <input type=submit class="button" id="1" name="getCurrentChannel" value="CURRENT CHANNEL" onclick="runCommand(this.name)">
             <input type=submit class="button" id="1" name="stopPlayback" value="STOP CHANNEL" onclick="runCommand(this.name)">
             <input type=submit class="button" id="1" name="startScan" value="START SCAN" onclick="runCommand(this.name)">
@@ -73,10 +75,12 @@
 
         <table id="channelList" BORDER="0">
         </table>
+	<h1 id="atmosStatus">UNKNOWN</h1>
     </div>
     <script src="https://vjs.zencdn.net/ie8/ie8-version/videojs-ie8.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-contrib-hls/5.14.1/videojs-contrib-hls.js"></script>
     <script src="https://vjs.zencdn.net/7.2.3/video.js"></script>
+    <script src="http://127.0.0.1:12345/scfs/cl/js/vizio-companion-lib.js"></script>
     <script>
         var token;
         var skip_ch_list;
@@ -85,6 +89,21 @@
         var ws;
         var ws_notify;
         var player = videojs('hls-example');
+
+	async function isAtmosSupported() {
+		console.log("Checking Atmos status: " + await VIZIO.getDolbyAtmosSupport());
+		document.getElementById("atmosStatus").innerHTML = await VIZIO.getDolbyAtmosSupport();
+	}
+
+	function wsAtmosStatus() {
+		req = "\{\"id\":0,\"command\":\"dolbyAtmosStatus\"\}"
+		ws.send(req);
+		console.log("ws requesting atmos status: " + req);
+		ws.onmessage = function(event) {
+			console.log("Received Atmos Status");
+			console.log(event.data);
+		}
+	}
 
         function populateChannelList(text) {
             items = text.channels;
